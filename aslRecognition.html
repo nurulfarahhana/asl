@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ASL Alphabet Recognition Pro</title>
+    <!-- Load MediaPipe -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .video-container {
+            position: relative;
+            width: 100%;
+            max-width: 640px;
+            aspect-ratio: 4/3;
+            background: #000;
+            border-radius: 1rem;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        #output_canvas {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1); /* Mirror effect */
+        }
+        #input_video {
+            transform: scaleX(-1);
+        }
+        .prediction-card {
+            background: rgba(15, 23, 42, 0.9);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+        .letter-glow {
+            text-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
+
+    <div class="max-w-6xl mx-auto p-4 md:p-8">
+        <header class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+            <div>
+                <h1 class="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">
+                    ASL SENSEI 🧩
+                </h1>
+                <p class="text-slate-400 font-medium">Real-time Recognition: Advanced Motion & Precision Logic</p>
+            </div>
+            <div class="flex gap-3">
+                <div class="px-4 py-2 rounded-full bg-slate-900 border border-slate-800 flex items-center gap-2">
+                    <span id="cam_status" class="w-3 h-3 rounded-full bg-red-500 animate-pulse"></span>
+                    <span class="text-xs font-bold uppercase tracking-wider">Kamera</span>
+                </div>
+                <div class="px-4 py-2 rounded-full bg-slate-900 border border-slate-800 flex items-center gap-2">
+                    <span id="model_status" class="w-3 h-3 rounded-full bg-red-500"></span>
+                    <span class="text-xs font-bold uppercase tracking-wider">Logik AI</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div class="lg:col-span-2 space-y-4">
+                <div class="video-container">
+                    <video id="input_video" class="hidden" autoplay playsinline></video>
+                    <canvas id="output_canvas" width="640" height="480"></canvas>
+                    
+                    <div id="prediction_box" class="absolute top-4 right-4 prediction-card p-6 rounded-2xl hidden flex flex-col items-center min-w-[140px]">
+                        <span class="text-[10px] font-bold text-blue-400 uppercase tracking-[0.2em] mb-1">Terdeteksi</span>
+                        <h2 id="letter" class="text-7xl font-black text-white letter-glow">?</h2>
+                        <div class="w-full bg-slate-800 h-1.5 rounded-full mt-4 overflow-hidden">
+                            <div id="conf_bar" class="bg-blue-500 h-full transition-all duration-300" style="width: 0%"></div>
+                        </div>
+                        <span id="confidence" class="text-[10px] mt-2 text-slate-400 font-bold">0% KEYAKINAN</span>
+                    </div>
+
+                    <div id="loading" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 z-50">
+                        <div class="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                        <p class="font-bold tracking-widest text-blue-400 animate-pulse">MEMULAKAN AI...</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="space-y-6">
+                <div class="bg-slate-900 p-6 rounded-2xl border border-slate-800">
+                    <h3 class="text-lg font-bold mb-4 flex items-center gap-2">📖 Panduan Abjad</h3>
+                    <div class="grid grid-cols-4 gap-2 text-center" id="alphabet_grid"></div>
+                </div>
+                <div class="bg-slate-900 p-6 rounded-2xl border border-slate-800">
+                    <h3 class="text-lg font-bold mb-2">Nota Teknik 💡</h3>
+                    <ul class="text-xs text-slate-400 space-y-2 leading-relaxed">
+                        <li><strong>J & Z:</strong> Gerakkan jari (pinky untuk J, index untuk Z) dalam bentuk huruf tersebut di udara.</li>
+                        <li><strong>M, N, T:</strong> Bezakan dengan letak ibu jari di celah jari yang betul.</li>
+                        <li><strong>X:</strong> Bengkokkan jari telunjuk seperti cangkuk (hook).</li>
+                    </ul>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const videoElement = document.getElementById('input_video');
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const letterDisplay = document.getElementById('letter');
+        const confidenceDisplay = document.getElementById('confidence');
+        const confBar = document.getElementById('conf_bar');
+        const predictionBox = document.getElementById('prediction_box');
+        const loadingScreen = document.getElementById('loading');
+        
+        let motionHistory = []; // Simpan history koordinat untuk J dan Z
+        const MAX_HISTORY = 15;
+
+        const grid = document.getElementById('alphabet_grid');
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").forEach(l => {
+            const div = document.createElement('div');
+            div.className = "p-2 bg-slate-800 rounded font-bold text-slate-500 border border-transparent";
+            div.id = `guide-${l}`;
+            div.innerText = l;
+            grid.appendChild(div);
+        });
+
+        function getDist(p1, p2) {
+            return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+        }
+
+        function detectMotion() {
+            if (motionHistory.length < 5) return null;
+            
+            const first = motionHistory[0];
+            const last = motionHistory[motionHistory.length - 1];
+            
+            // Simbol Z: Pergerakan mendatar (horizontal) yang ketara
+            const horizontalMove = Math.abs(last.indexTip.x - first.indexTip.x);
+            const verticalMove = Math.abs(last.indexTip.y - first.indexTip.y);
+            
+            // J detect (Pinky motion)
+            const pinkyFirst = first.pinkyTip;
+            const pinkyLast = last.pinkyTip;
+            if (Math.abs(pinkyLast.x - pinkyFirst.x) > 0.1 && pinkyLast.y > pinkyFirst.y) return 'J';
+
+            // Z detect (Index motion)
+            if (horizontalMove > 0.15 && verticalMove > 0.05) return 'Z';
+            
+            return null;
+        }
+
+        function classifySign(landmarks) {
+            const tip = (i) => landmarks[i];
+            const pip = (i) => landmarks[i-2];
+            const mcp = (i) => landmarks[i-3];
+            
+            // Track motion
+            motionHistory.push({
+                indexTip: {x: tip(8).x, y: tip(8).y},
+                pinkyTip: {x: tip(20).x, y: tip(20).y}
+            });
+            if (motionHistory.length > MAX_HISTORY) motionHistory.shift();
+
+            const motionChar = detectMotion();
+            if (motionChar) return { char: motionChar, conf: 0.90 };
+
+            // Status Jari
+            const indexUp = tip(8).y < pip(8).y;
+            const middleUp = tip(12).y < pip(12).y;
+            const ringUp = tip(16).y < pip(16).y;
+            const pinkyUp = tip(20).y < pip(20).y;
+            const thumbUp = tip(4).y < tip(2).y;
+
+            const isFist = !indexUp && !middleUp && !ringUp && !pinkyUp;
+
+            // X: Hooked Index
+            const indexHooked = tip(8).y > pip(8).y && pip(8).y < mcp(8).y;
+            if (indexHooked && !middleUp && !ringUp && !pinkyUp) return { char: 'X', conf: 0.92 };
+
+            // A vs E vs S (Precision Thumb)
+            if (isFist) {
+                // A: Thumb at side of index
+                if (tip(4).x < tip(5).x && tip(4).y < tip(6).y) return { char: 'A', conf: 0.94 };
+                // S: Thumb over middle/index fingers
+                if (tip(4).x > tip(6).x && tip(4).x < tip(14).x && tip(4).y < tip(10).y) return { char: 'S', conf: 0.91 };
+                // E: Thumb tucked under
+                if (tip(4).y > tip(8).y && tip(4).y > tip(12).y) return { char: 'E', conf: 0.89 };
+                
+                // M, N, T (Thumb placement)
+                // T: Thumb between index and middle
+                if (tip(4).x > tip(5).x && tip(4).x < tip(9).x) return { char: 'T', conf: 0.85 };
+                // N: Thumb between middle and ring
+                if (tip(4).x > tip(9).x && tip(4).x < tip(13).x) return { char: 'N', conf: 0.85 };
+                // M: Thumb between ring and pinky
+                if (tip(4).x > tip(13).x && tip(4).x < tip(17).x) return { char: 'M', conf: 0.85 };
+            }
+
+            // G & H (Horizontal extension)
+            const indexSide = Math.abs(tip(8).x - mcp(8).x) > 0.12;
+            const middleSide = Math.abs(tip(12).x - mcp(12).x) > 0.12;
+            if (indexSide && middleSide && !ringUp) return { char: 'H', conf: 0.95 };
+            if (indexSide && !middleSide && !ringUp) return { char: 'G', conf: 0.93 };
+
+            // Standard Static
+            if (indexUp && middleUp && ringUp && pinkyUp) return { char: 'B', conf: 0.98 };
+            if (indexUp && !middleUp && !ringUp && !pinkyUp && !thumbUp) return { char: 'D', conf: 0.92 };
+            if (pinkyUp && !indexUp && !middleUp && !ringUp) return { char: 'I', conf: 0.95 };
+            if (indexUp && thumbUp && !middleUp && !ringUp && !pinkyUp) return { char: 'L', conf: 0.97 };
+            if (thumbUp && pinkyUp && !indexUp && !middleUp) return { char: 'Y', conf: 0.96 };
+            if (indexUp && middleUp && !ringUp && !pinkyUp && getDist(tip(8), tip(12)) > 0.06) return { char: 'V', conf: 0.98 };
+
+            return { char: '?', conf: 0.4 };
+        }
+
+        let lastLetter = "";
+        function updateGuide(currentLetter) {
+            if (lastLetter) {
+                const prev = document.getElementById(`guide-${lastLetter}`);
+                if (prev) prev.className = "p-2 bg-slate-800 rounded font-bold text-slate-500 border border-transparent";
+            }
+            const curr = document.getElementById(`guide-${currentLetter}`);
+            if (curr) {
+                curr.className = "p-2 bg-blue-500/20 rounded font-bold text-blue-400 border border-blue-500 animate-pulse";
+                lastLetter = currentLetter;
+            }
+        }
+
+        function onResults(results) {
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+            
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                predictionBox.classList.remove('hidden');
+                document.getElementById('model_status').classList.replace('bg-red-500', 'bg-green-500');
+                
+                for (const landmarks of results.multiHandLandmarks) {
+                    drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#60a5fa', lineWidth: 4});
+                    drawLandmarks(canvasCtx, landmarks, {color: '#ffffff', lineWidth: 1, radius: 2});
+                    
+                    const prediction = classifySign(landmarks);
+                    letterDisplay.innerText = prediction.char;
+                    const displayConf = Math.round(prediction.conf * 100);
+                    confidenceDisplay.innerText = `${displayConf}% KEYAKINAN`;
+                    confBar.style.width = `${displayConf}%`;
+                    
+                    if (prediction.char !== '?') updateGuide(prediction.char);
+                }
+            } else {
+                predictionBox.classList.add('hidden');
+                document.getElementById('model_status').classList.replace('bg-green-500', 'bg-red-500');
+                motionHistory = []; // Reset history if hand lost
+            }
+            canvasCtx.restore();
+        }
+
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.75,
+            minTrackingConfidence: 0.75
+        });
+
+        hands.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+                if (loadingScreen.style.display !== 'none') {
+                    loadingScreen.style.display = 'none';
+                    document.getElementById('cam_status').classList.replace('bg-red-500', 'bg-green-500');
+                }
+            },
+            width: 640,
+            height: 480
+        });
+
+        camera.start().catch(err => {
+            alert("Akses kamera diperlukan.");
+        });
+    </script>
+</body>
+</html>

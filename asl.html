@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ASL Alphabet Recognition Pro - Fasa 2 (A-J)</title>
+    <!-- Muat turun MediaPipe -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .video-container {
+            position: relative;
+            width: 100%;
+            max-width: 640px;
+            aspect-ratio: 4/3;
+            background: #000;
+            border-radius: 1rem;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        #output_canvas {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1);
+        }
+        #input_video {
+            transform: scaleX(-1);
+        }
+        .prediction-card {
+            background: rgba(15, 23, 42, 0.9);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+        .letter-glow {
+            text-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+        }
+        .active-guide {
+            background-color: #3b82f6 !important;
+            color: white !important;
+            border-color: #60a5fa !important;
+            transform: scale(1.1);
+            transition: all 0.2s;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
+
+    <div class="max-w-6xl mx-auto p-4 md:p-8">
+        <header class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+            <div>
+                <h1 class="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">
+                    ASL SENSEI 🧩
+                </h1>
+                <p class="text-slate-400 font-medium">Latihan Fasa 2: Baiki Pengecaman I & J</p>
+            </div>
+            <div class="flex gap-3">
+                <div class="px-4 py-2 rounded-full bg-slate-900 border border-slate-800 flex items-center gap-2">
+                    <span id="cam_status" class="w-3 h-3 rounded-full bg-red-500 animate-pulse"></span>
+                    <span class="text-xs font-bold uppercase tracking-wider">Kamera</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div class="lg:col-span-2 space-y-4">
+                <div class="video-container">
+                    <video id="input_video" class="hidden" autoplay playsinline></video>
+                    <canvas id="output_canvas" width="640" height="480"></canvas>
+                    
+                    <div id="prediction_box" class="absolute top-4 right-4 prediction-card p-6 rounded-2xl hidden flex flex-col items-center min-w-[140px]">
+                        <span class="text-[10px] font-bold text-blue-400 uppercase tracking-[0.2em] mb-1">Dikesan</span>
+                        <h2 id="letter" class="text-7xl font-black text-white letter-glow">?</h2>
+                        <div class="w-full bg-slate-800 h-1.5 rounded-full mt-4 overflow-hidden">
+                            <div id="conf_bar" class="bg-blue-500 h-full transition-all duration-300" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <div id="loading" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 z-50">
+                        <div class="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                        <p class="font-bold tracking-widest text-blue-400 animate-pulse">OPTIMASI GERAKAN...</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="space-y-6">
+                <div class="bg-slate-900 p-6 rounded-2xl border border-slate-800">
+                    <h3 class="text-lg font-bold mb-4 flex items-center gap-2">🎯 Fokus A-J</h3>
+                    <div class="grid grid-cols-5 gap-2 text-center" id="alphabet_grid">
+                        <div id="guide-A" class="p-2 bg-slate-800 rounded font-bold text-slate-500 border border-slate-700">A</div>
+                        <div id="guide-B" class="p-2 bg-slate-800 rounded font-bold text-slate-500 border border-slate-700">B</div>
+                        <div id="guide-C" class="p-2 bg-slate-800 rounded font-bold text-slate-500 border border-slate-700">C</div>
+                        <div id="guide-D" class="p-2 bg-slate-800 rounded font-bold text-slate-500 border border-slate-700">D</div>
+                        <div id="guide-E" class="p-2 bg-slate-800 rounded font-bold text-slate-500 border border-slate-700">E</div>
+                        <div id="guide-F" class="p-2 bg-slate-800 rounded font-bold text-slate-500 border border-slate-700">F</div>
+                        <div id="guide-G" class="p-2 bg-slate-800 rounded font-bold text-slate-500 border border-slate-700">G</div>
+                        <div id="guide-H" class="p-2 bg-slate-800 rounded font-bold text-slate-500 border border-slate-700">H</div>
+                        <div id="guide-I" class="p-2 bg-slate-800 rounded font-bold text-slate-500 border border-slate-700">I</div>
+                        <div id="guide-J" class="p-2 bg-slate-800 rounded font-bold text-slate-500 border border-slate-700">J</div>
+                    </div>
+                </div>
+                <div class="bg-slate-900 p-6 rounded-2xl border border-slate-800 h-[300px] overflow-y-auto">
+                    <h3 class="text-lg font-bold mb-2">Tips J & I 💡</h3>
+                    <ul class="text-sm text-slate-400 space-y-3 leading-relaxed">
+                        <li><strong>I:</strong> Tegakkan kelingking, pastikan jari lain (termasuk ibu jari) tidak menghalang pandangan kamera ke kelingking.</li>
+                        <li><strong>J:</strong> Gerakkan kelingking seperti melukis "payung terbalik". Mulakan dari atas, tarik ke bawah dan pusing ke tepi sedikit.</li>
+                    </ul>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const videoElement = document.getElementById('input_video');
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const letterDisplay = document.getElementById('letter');
+        const confBar = document.getElementById('conf_bar');
+        const predictionBox = document.getElementById('prediction_box');
+        const loadingScreen = document.getElementById('loading');
+
+        // Sejarah gerakan untuk huruf J (Ditambah kepada 20 frame)
+        let motionHistory = [];
+        const MAX_HISTORY = 20;
+
+        function getDist(p1, p2) {
+            return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+        }
+
+        function classifySign(landmarks) {
+            const tip = (i) => landmarks[i];
+            const pip = (i) => landmarks[i-2];
+            const mcp = (i) => landmarks[i-3];
+            
+            // Rekod sejarah gerakan (kelingking)
+            motionHistory.push({ x: tip(20).x, y: tip(20).y });
+            if (motionHistory.length > MAX_HISTORY) motionHistory.shift();
+
+            // Status Jari
+            const indexUp = tip(8).y < pip(8).y;
+            const middleUp = tip(12).y < pip(12).y;
+            const ringUp = tip(16).y < pip(16).y;
+            const pinkyUp = tip(20).y < pip(20).y;
+            const thumbUp = tip(4).y < tip(2).y;
+            
+            // Jarak khusus
+            const d4_8 = getDist(tip(4), tip(8));
+            const d4_12 = getDist(tip(4), tip(12));
+            const d8_12 = getDist(tip(8), tip(12));
+
+            // --- LOGIK J (Gerakan yang lebih sensitif) ---
+            if (motionHistory.length >= 10 && pinkyUp && !indexUp && !middleUp) {
+                const first = motionHistory[0];
+                const last = motionHistory[motionHistory.length - 1];
+                const mid = motionHistory[Math.floor(motionHistory.length / 2)];
+                
+                // Mengesan lengkungan: Turun bawah (first -> mid) kemudian pusing (mid -> last)
+                const dyDown = mid.y - first.y;
+                const dxSwipe = Math.abs(last.x - mid.x);
+                
+                if (dyDown > 0.03 && dxSwipe > 0.02) return { char: 'J', conf: 0.96 };
+            }
+
+            // --- LOGIK I (Syarat dilonggarkan sedikit) ---
+            if (pinkyUp && !indexUp && !middleUp && !ringUp) {
+                // I dikesan jika kelingking tegak dan jari lain tutup, tak kisah ibu jari kat mana sangat
+                return { char: 'I', conf: 0.92 };
+            }
+
+            // --- LOGIK F (OK Sign) ---
+            if (middleUp && ringUp && pinkyUp && d4_8 < 0.06) {
+                return { char: 'F', conf: 0.95 };
+            }
+
+            // --- LOGIK G & H (Horizontal) ---
+            const indexSide = Math.abs(tip(8).x - mcp(8).x) > 0.08;
+            const middleSide = Math.abs(tip(12).x - mcp(12).x) > 0.08;
+            if (indexSide && !middleSide && !ringUp && !pinkyUp) return { char: 'G', conf: 0.90 };
+            if (indexSide && middleSide && !ringUp && !pinkyUp) return { char: 'H', conf: 0.92 };
+
+            // --- LOGIK A-E (Kekal stabil) ---
+            if (indexUp && middleUp && ringUp && pinkyUp && d8_12 < 0.05) return { char: 'B', conf: 0.98 };
+            if (indexUp && !middleUp && !ringUp && !pinkyUp && d4_12 < 0.1) return { char: 'D', conf: 0.95 };
+            
+            if (!indexUp && !middleUp && !ringUp && !pinkyUp && d4_8 > 0.08 && d4_8 < 0.2) {
+                 return { char: 'C', conf: 0.90 };
+            }
+
+            const isFist = !indexUp && !middleUp && !ringUp && !pinkyUp;
+            if (isFist) {
+                if (tip(4).y < tip(6).y && tip(4).x < tip(5).x) return { char: 'A', conf: 0.92 };
+                if (tip(4).y > tip(8).y && tip(4).y > tip(12).y) return { char: 'E', conf: 0.88 };
+            }
+
+            return { char: '?', conf: 0.3 };
+        }
+
+        let lastActive = "";
+        function highlightGuide(char) {
+            if (lastActive) document.getElementById(`guide-${lastActive}`)?.classList.remove('active-guide');
+            if (char !== '?') {
+                const el = document.getElementById(`guide-${char}`);
+                if (el) {
+                    el.classList.add('active-guide');
+                    lastActive = char;
+                }
+            }
+        }
+
+        function onResults(results) {
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+            
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                predictionBox.classList.remove('hidden');
+                for (const landmarks of results.multiHandLandmarks) {
+                    drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#60a5fa', lineWidth: 3});
+                    drawLandmarks(canvasCtx, landmarks, {color: '#ffffff', lineWidth: 1, radius: 2});
+                    
+                    const prediction = classifySign(landmarks);
+                    letterDisplay.innerText = prediction.char;
+                    confBar.style.width = `${prediction.conf * 100}%`;
+                    highlightGuide(prediction.char);
+                }
+            } else {
+                predictionBox.classList.add('hidden');
+                highlightGuide('?');
+                motionHistory = [];
+            }
+            canvasCtx.restore();
+        }
+
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.7,
+            minTrackingConfidence: 0.7
+        });
+
+        hands.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+                if (loadingScreen.style.display !== 'none') {
+                    loadingScreen.style.display = 'none';
+                    document.getElementById('cam_status').classList.replace('bg-red-500', 'bg-green-500');
+                }
+            },
+            width: 640,
+            height: 480
+        });
+        camera.start();
+    </script>
+</body>
+</html>
